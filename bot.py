@@ -7,35 +7,33 @@ import requests
 import google.generativeai as genai
 
 # ==========================================
-# 1. تنظیمات و سهمیه‌بندی قطعی (مجموعاً ۲۵ پست در روز)
+# 1. Config & Quotas
 # ==========================================
 DAILY_QUOTAS = {
-    "AI": 8,              # ۱. هوش مصنوعی (بیشترین)
-    "Medical": 5,         # ۲. علوم پزشکی و سلامت
-    "Tech": 5,            # ۳. دنیای تکنولوژی و گجت‌ها
-    "Space": 3,           # ۴. نجوم و فضا
-    "Science": 2,         # ۵. علوم پایه
-    "CyberSecurity": 2    # ۶. هک و امنیت سایبری
+    "AI": 8,
+    "Medical": 5,
+    "Tech": 5,
+    "Space": 3,
+    "Science": 2,
+    "CyberSecurity": 2
 }
 
 RSS_SOURCES = [
     "https://www.theverge.com/rss/index.xml",
     "https://techcrunch.com/feed/",
     "https://www.sciencedaily.com/rss/top/technology.xml",
-    # سایر منابع شما در اینجا قرار می‌گیرند...
 ]
 
-# پیکربندی جمینای
+# Gemini Config
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 model = genai.GenerativeModel('gemini-2.5-flash')
 
 # ==========================================
-# 2. مدیریت وضعیت روزانه (State Management)
+# 2. State Management
 # ==========================================
 STATE_FILE = "daily_state.json"
 
 def load_state():
-    """خواندن وضعیت سهمیه‌های امروز. اگر روز جدید شده باشد، ریست می‌شود."""
     today = datetime.date.today().isoformat()
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, 'r') as f:
@@ -43,21 +41,16 @@ def load_state():
             if state.get("date") == today:
                 return state
             
-    # ساختار اولیه برای روز جدید
     return {"date": today, "published_urls": [], "counts": {cat: 0 for cat in DAILY_QUOTAS}}
 
 def save_state(state):
-    """ذخیره وضعیت در فایل"""
     with open(STATE_FILE, 'w') as f:
         json.dump(state, f)
 
 # ==========================================
-# 3. موتور هوش مصنوعی (جمینای)
+# 3. AI Engine (Gemini)
 # ==========================================
 def categorize_news(title, summary):
-    """
-    قدم اول: فقط دسته‌بندی خبر برای جلوگیری از هدر رفتن توکن ترجمه
-    """
     prompt = f"""
     Analyze the following news title and summary. 
     Categorize it strictly into ONE of the following categories:
@@ -72,9 +65,6 @@ def categorize_news(title, summary):
     return category if category in DAILY_QUOTAS else None
 
 def translate_and_format(title, content):
-    """
-    قدم دوم: ترجمه روان، خلاصه‌سازی و افزودن ایموجی و هشتگ
-    """
     prompt = f"""
     متن زیر را به فارسی روان، جذاب و ژورنالیستی ترجمه و خلاصه کن.
     از لحن مناسب برای یک کانال تلگرامی/بله علمی استفاده کن.
@@ -86,64 +76,65 @@ def translate_and_format(title, content):
     return response.text.strip()
 
 # ==========================================
-# 4. انتشار در پیام‌رسان (بله / روبیکا)
+# 4. Channel Publisher
 # ==========================================
 def send_to_channel(text):
-    """ارسال متن نهایی به API پیام‌رسان"""
-    # در حال حاضر کد فقط متن را چاپ می‌کند تا از عملکرد جمینای مطمئن شویم.
-    # برای اتصال به بله، در مراحل بعد این قسمت را تکمیل می‌کنیم.
     print(f"--- POSTING TO CHANNEL ---\n{text}\n--------------------------")
     return True
 
 # ==========================================
-# 5. منطق اصلی و آبشاری برنامه
+# 5. Main Logic
 # ==========================================
 def main():
     state = load_state()
     
-    # گرفتن تمام اخبار جدید از منابع
     all_articles = []
     for url in RSS_SOURCES:
         feed = feedparser.parse(url)
-        for entry in feed.entries[:5]: # بررسی ۵ خبر اول هر فید
+        for entry in feed.entries[:5]:
             if entry.link not in state["published_urls"]:
                 all_articles.append(entry)
                 
     if not all_articles:
-        print("هیچ خبر جدیدی یافت نشد.")
+        print("No new articles found.")
         return
 
     published_in_this_run = False
 
     for article in all_articles:
         try:
-            # ۱. دسته‌بندی خبر
             category = categorize_news(article.title, article.summary)
             
-            # ایجاد وقفه ۴ ثانیه‌ای برای جلوگیری از بلاک شدن توسط گوگل
             time.sleep(4)
             
             if not category:
                 continue
                 
-            # ۲. بررسی سهمیه دسته‌بندی
             if state["counts"][category] < DAILY_QUOTAS[category]:
-                # ۳. پردازش نهایی و تولید محتوا
                 final_post = translate_and_format(article.title, article.summary)
                 
-                # ۴. ارسال
                 success = send_to_channel(final_post)
                 
                 if success:
-                    # ۵. به‌روزرسانی وضعیت
                     state["counts"][category] += 1
                     state["published_urls"].append(article.link)
                     save_state(state)
                     published_in_this_run = True
-                    print(f"پست جدید در دسته {category} منتشر شد. سهمیه باقی‌مانده: {DAILY_QUOTAS[category] - state['counts'][category]}")
-                    
-                    # در هر اجرای ۳۰ دقیقه‌ای فقط یک پست منتشر می‌کنیم
+                    print(f"Posted in {category}. Remaining: {DAILY_QUOTAS[category] - state['counts'][category]}")
                     break 
                     
         except Exception as e:
-            # اگر خطای محدودیت
+            error_msg = str(e)
+            if "429" in error_msg or "Quota" in error_msg:
+                print("API Rate Limit. Waiting 10 seconds...")
+                time.sleep(10)
+                continue
+            else:
+                print(f"Unknown Error: {error_msg}")
+                continue
+
+    if not published_in_this_run:
+        print("No matching articles for remaining quotas in this run.")
+
+if __name__ == "__main__":
+    main()
