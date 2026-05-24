@@ -55,7 +55,10 @@ def categorize_news(title, summary):
     Analyze the following news title and summary. 
     Categorize it strictly into ONE of the following categories:
     AI, Medical, Tech, Space, Science, CyberSecurity.
-    If it doesn't fit well, output 'None'.
+    
+    CRITICAL RULE: If the content is an advertisement, a product deal, shopping advice, or discounts, you MUST output 'None'.
+    If it doesn't fit the scientific categories, output 'None'.
+    
     Title: {title}
     Summary: {summary}
     Output ONLY the category name.
@@ -64,23 +67,51 @@ def categorize_news(title, summary):
     category = response.text.strip()
     return category if category in DAILY_QUOTAS else None
 
-def translate_and_format(title, content):
+def translate_and_format(title, content, date, link):
     prompt = f"""
     متن زیر را به فارسی روان، جذاب و ژورنالیستی ترجمه و خلاصه کن.
-    از لحن مناسب برای یک کانال تلگرامی/بله علمی استفاده کن.
-    متن را با ایموجی‌های مرتبط تزئین کن و در انتها ۳ تا ۵ هشتگ مرتبط فارسی قرار بده.
+    از لحن مناسب برای یک کانال علمی استفاده کن.
+    متن را با ایموجی‌های مرتبط تزئین کن.
+    در انتهای متن، حتماً "تاریخ انتشار خبر" را (ترجیحاً به شمسی یا میلادی خوانا) بنویس.
+    سپس ۳ تا ۵ هشتگ مرتبط فارسی قرار بده.
+    در خط آخر، عبارت "🔗 منبع:" را بنویس و دقیقاً لینک خبر را مقابل آن قرار بده.
+
     عنوان خبر: {title}
     متن خبر: {content}
+    تاریخ میلادی خبر: {date}
+    لینک خبر: {link}
     """
     response = model.generate_content(prompt)
     return response.text.strip()
 
 # ==========================================
-# 4. Channel Publisher
+# 4. Bale API Publisher
 # ==========================================
 def send_to_channel(text):
-    print(f"--- POSTING TO CHANNEL ---\n{text}\n--------------------------")
-    return True
+    bot_token = os.environ.get("BOT_TOKEN")
+    chat_id = os.environ.get("BALE_CHAT_ID")
+    
+    if not bot_token or not chat_id:
+        print("Error: BOT_TOKEN or BALE_CHAT_ID is missing in GitHub Secrets.")
+        return False
+
+    url = f"https://tapi.bale.ai/bot{bot_token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text
+    }
+    
+    try:
+        response = requests.post(url, json=payload)
+        if response.status_code == 200:
+            print("Successfully posted to Bale Channel!")
+            return True
+        else:
+            print(f"Failed to post. API Response: {response.text}")
+            return False
+    except Exception as e:
+        print(f"Network error while sending to Bale: {e}")
+        return False
 
 # ==========================================
 # 5. Main Logic
@@ -104,15 +135,19 @@ def main():
     for article in all_articles:
         try:
             category = categorize_news(article.title, article.summary)
-            
             time.sleep(4)
             
             if not category:
                 continue
                 
             if state["counts"][category] < DAILY_QUOTAS[category]:
-                final_post = translate_and_format(article.title, article.summary)
+                # دریافت تاریخ خبر از فید
+                pub_date = getattr(article, 'published', getattr(article, 'updated', 'تاریخ نامشخص'))
                 
+                # پردازش نهایی و ترجمه
+                final_post = translate_and_format(article.title, article.summary, pub_date, article.link)
+                
+                # ارسال به بله
                 success = send_to_channel(final_post)
                 
                 if success:
@@ -130,7 +165,7 @@ def main():
                 time.sleep(10)
                 continue
             else:
-                print(f"Unknown Error: {error_msg}")
+                print(f"Error: {error_msg}")
                 continue
 
     if not published_in_this_run:
