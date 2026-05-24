@@ -1,7 +1,9 @@
 import os
 import json
+import time
 import feedparser
 import datetime
+import requests
 import google.generativeai as genai
 
 # ==========================================
@@ -16,14 +18,11 @@ DAILY_QUOTAS = {
     "CyberSecurity": 2    # ۶. هک و امنیت سایبری
 }
 
-# اولویت‌بندی آبشاری برای بررسی اخبار
-PRIORITY_ORDER = ["AI", "Medical", "Tech", "Space", "Science", "CyberSecurity"]
-
 RSS_SOURCES = [
     "https://www.theverge.com/rss/index.xml",
     "https://techcrunch.com/feed/",
     "https://www.sciencedaily.com/rss/top/technology.xml",
-    # سایر 13 منبع شما در اینجا قرار می‌گیرند...
+    # سایر منابع شما در اینجا قرار می‌گیرند...
 ]
 
 # پیکربندی جمینای
@@ -58,7 +57,6 @@ def save_state(state):
 def categorize_news(title, summary):
     """
     قدم اول: فقط دسته‌بندی خبر برای جلوگیری از هدر رفتن توکن ترجمه
-    خروجی باید دقیقاً یکی از کلیدهای DAILY_QUOTAS باشد یا None.
     """
     prompt = f"""
     Analyze the following news title and summary. 
@@ -92,8 +90,8 @@ def translate_and_format(title, content):
 # ==========================================
 def send_to_channel(text):
     """ارسال متن نهایی به API پیام‌رسان"""
-    # TODO: پیاده‌سازی درخواست POST به API بله یا روبیکا
-    # url = "https://tapi.bale.ai/bot{TOKEN}/sendMessage"
+    # در حال حاضر کد فقط متن را چاپ می‌کند تا از عملکرد جمینای مطمئن شویم.
+    # برای اتصال به بله، در مراحل بعد این قسمت را تکمیل می‌کنیم.
     print(f"--- POSTING TO CHANNEL ---\n{text}\n--------------------------")
     return True
 
@@ -115,37 +113,37 @@ def main():
         print("هیچ خبر جدیدی یافت نشد.")
         return
 
-    # سیستم آبشاری: تلاش برای پیدا کردن و انتشار *یک* خبر در این اجرای ۳۰ دقیقه‌ای
-    # که در بالاترین اولویتِ دارای ظرفیتِ خالی قرار داشته باشد.
-    
     published_in_this_run = False
 
     for article in all_articles:
-        # ۱. دسته‌بندی خبر
-        category = categorize_news(article.title, article.summary)
-        
-        if not category:
-            continue
+        try:
+            # ۱. دسته‌بندی خبر
+            category = categorize_news(article.title, article.summary)
             
-        # ۲. بررسی سهمیه دسته‌بندی
-        if state["counts"][category] < DAILY_QUOTAS[category]:
-            # ۳. پردازش نهایی و تولید محتوا
-            final_post = translate_and_format(article.title, article.summary)
+            # ایجاد وقفه ۴ ثانیه‌ای برای جلوگیری از بلاک شدن توسط گوگل
+            time.sleep(4)
             
-            # ۴. ارسال
-            success = send_to_channel(final_post)
-            
-            if success:
-                # ۵. به‌روزرسانی وضعیت
-                state["counts"][category] += 1
-                state["published_urls"].append(article.link)
-                save_state(state)
-                published_in_this_run = True
-                print(f"پست جدید در دسته {category} منتشر شد. سهمیه باقی‌مانده: {DAILY_QUOTAS[category] - state['counts'][category]}")
-                break # در هر اجرای ۳۰ دقیقه‌ای فقط یک پست منتشر می‌کنیم تا کانال اسپم نشود
-
-    if not published_in_this_run:
-        print("در این اجرا، خبری که با سهمیه‌های باقی‌مانده همخوانی داشته باشد یافت نشد.")
-
-if __name__ == "__main__":
-    main()
+            if not category:
+                continue
+                
+            # ۲. بررسی سهمیه دسته‌بندی
+            if state["counts"][category] < DAILY_QUOTAS[category]:
+                # ۳. پردازش نهایی و تولید محتوا
+                final_post = translate_and_format(article.title, article.summary)
+                
+                # ۴. ارسال
+                success = send_to_channel(final_post)
+                
+                if success:
+                    # ۵. به‌روزرسانی وضعیت
+                    state["counts"][category] += 1
+                    state["published_urls"].append(article.link)
+                    save_state(state)
+                    published_in_this_run = True
+                    print(f"پست جدید در دسته {category} منتشر شد. سهمیه باقی‌مانده: {DAILY_QUOTAS[category] - state['counts'][category]}")
+                    
+                    # در هر اجرای ۳۰ دقیقه‌ای فقط یک پست منتشر می‌کنیم
+                    break 
+                    
+        except Exception as e:
+            # اگر خطای محدودیت
