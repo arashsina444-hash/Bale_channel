@@ -4,7 +4,7 @@ import time
 import feedparser
 import datetime
 import requests
-import google.generativeai as genai
+from google import genai
 
 # ==========================================
 # 1. Config & Quotas
@@ -24,12 +24,17 @@ RSS_SOURCES = [
     "https://www.sciencedaily.com/rss/top/technology.xml",
 ]
 
-# Gemini Config
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-model = genai.GenerativeModel('gemini-2.5-flash')
+# ==========================================
+# 2. Gemini Config (New SDK)
+# ==========================================
+api_key = os.environ.get("GEMINI_API_KEY")
+client = genai.Client(api_key=api_key)
+
+# استفاده از مدل پایدار و جدید 2.0
+MODEL_ID = 'gemini-2.0-flash'
 
 # ==========================================
-# 2. State Management
+# 3. State Management
 # ==========================================
 STATE_FILE = "daily_state.json"
 
@@ -48,7 +53,7 @@ def save_state(state):
         json.dump(state, f)
 
 # ==========================================
-# 3. AI Engine (Gemini)
+# 4. AI Engine (Gemini)
 # ==========================================
 def categorize_news(title, summary):
     prompt = f"""
@@ -63,7 +68,10 @@ def categorize_news(title, summary):
     Summary: {summary}
     Output ONLY the category name.
     """
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(
+        model=MODEL_ID,
+        contents=prompt
+    )
     category = response.text.strip()
     return category if category in DAILY_QUOTAS else None
 
@@ -81,11 +89,14 @@ def translate_and_format(title, content, date, link):
     تاریخ میلادی خبر: {date}
     لینک خبر: {link}
     """
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(
+        model=MODEL_ID,
+        contents=prompt
+    )
     return response.text.strip()
 
 # ==========================================
-# 4. Bale API Publisher
+# 5. Bale API Publisher
 # ==========================================
 def send_to_channel(text):
     bot_token = os.environ.get("BOT_TOKEN")
@@ -114,7 +125,7 @@ def send_to_channel(text):
         return False
 
 # ==========================================
-# 5. Main Logic
+# 6. Main Logic
 # ==========================================
 def main():
     state = load_state()
@@ -136,7 +147,7 @@ def main():
         try:
             category = categorize_news(article.title, article.summary)
             
-            # وقفه ۶ ثانیه‌ای برای جلوگیری از مسدود شدن توسط جمینای
+            # وقفه ۶ ثانیه‌ای
             time.sleep(6)
             
             if not category:
@@ -158,7 +169,6 @@ def main():
         except Exception as e:
             error_msg = str(e)
             if "429" in error_msg or "Quota" in error_msg:
-                # اگر باز هم اخطار محدودیت سرعت داد، ۲۰ ثانیه کامل صبر می‌کند
                 print("API Rate Limit. Waiting 20 seconds...")
                 time.sleep(20)
                 continue
