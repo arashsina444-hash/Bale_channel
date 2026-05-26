@@ -44,7 +44,6 @@ def find_working_model():
     try:
         available_models = [m.name.replace('models/', '') for m in client.models.list()]
         
-        # اولویت با مدل‌های لایت و فلش جدید که سهمیه رایگان بالایی دارند
         preferred_order = [
             'gemini-2.5-flash-lite',
             'gemini-flash-lite-latest',
@@ -55,7 +54,6 @@ def find_working_model():
         
         models_to_test = [p for p in preferred_order if p in available_models]
         
-        # اضافه کردن بقیه مدل‌های فلش که شاید در لیست اولویت ما نبودند
         for m in available_models:
             if 'flash' in m and m not in models_to_test and 'preview' not in m:
                 models_to_test.append(m)
@@ -63,19 +61,16 @@ def find_working_model():
         for m in models_to_test:
             print(f"⏳ در حال تست سهمیه مدل: {m} ...")
             try:
-                # تست واقعی ارسال پیام برای اطمینان از داشتن سهمیه
                 client.models.generate_content(model=m, contents="hi")
-                print(f"🎯 مدل {m} با موفقیت تست شد و سهمیه دارد! انتخاب شد.")
+                print(f"🎯 مدل {m} با موفقیت تست شد و انتخاب شد!")
                 return m
             except Exception as e:
                 err = str(e)
                 if "limit: 0" in err:
-                    print(f"❌ مدل {m}: سهمیه رایگان صفر است.")
+                    pass
                 elif "429" in err or "quota" in err.lower():
-                    print(f"✅ مدل {m}: فعال است (فقط محدودیت سرعت لحظه‌ای). انتخاب شد.")
+                    print(f"✅ مدل {m} فعال است (محدودیت سرعت لحظه‌ای). انتخاب شد.")
                     return m
-                else:
-                    print(f"❌ مدل {m}: ارور ناشناخته -> {err[:50]}")
             time.sleep(2)
             
         print("🚨 هیچ‌کدام از مدل‌ها سهمیه رایگان نداشتند!")
@@ -105,27 +100,31 @@ def save_state(state):
         json.dump(state, f)
 
 # ==========================================
-# 4. AI Engine (Gemini)
+# 4. Smart Local Categorizer (Zero API Cost)
 # ==========================================
 def categorize_news(title, summary):
-    prompt = f"""
-    Analyze the following news title and summary. 
-    Categorize it strictly into ONE of the following categories:
-    AI, Medical, Tech, Space, Science, CyberSecurity.
+    text = f" {title} {summary} ".lower()
     
-    CRITICAL RULE: If the content is an advertisement, a product deal, shopping advice, or discounts, you MUST output 'None'.
-    If it doesn't fit the scientific categories, output 'None'.
+    # 1. فیلتر کردن تبلیغات
+    ads_keywords = [" deal ", " discount ", " sale ", " save $", " price drop ", " buy now ", " coupon ", " % off "]
+    if any(ad in text for ad in ads_keywords):
+        return None
+        
+    # 2. جستجوی کلمات کلیدی دسته‌بندی‌ها
+    categories = {
+        "AI": [" artificial intelligence", " ai ", "machine learning", "chatgpt", "gemini", "openai", "neural network", " llm ", "deep learning"],
+        "CyberSecurity": [" hacker ", "cybersecurity", "malware", "ransomware", "vulnerability", "breach", "cyber attack", " password"],
+        "Space": [" space ", "nasa", "spacex", " mars ", " moon ", "galaxy", "telescope", "astronaut", "orbit"],
+        "Medical": [" health", " medical", " cancer", "disease", "medicine", " brain", "vaccine", "clinical", "hospital"],
+        "Tech": [" apple ", " google ", " microsoft ", "smartphone", "laptop", " android ", " ios ", "gadget", "processor", "hardware"],
+        "Science": ["physics", "chemistry", "biology", "fossil", "archaeology", "quantum", "scientist", "climate"]
+    }
     
-    Title: {title}
-    Summary: {summary}
-    Output ONLY the category name.
-    """
-    response = client.models.generate_content(
-        model=MODEL_ID,
-        contents=prompt
-    )
-    category = response.text.strip()
-    return category if category in DAILY_QUOTAS else None
+    for cat, keywords in categories.items():
+        if any(kw in text for kw in keywords):
+            return cat
+            
+    return None
 
 def translate_and_format(title, content, date, link):
     prompt = f"""
@@ -206,15 +205,18 @@ def main():
     published_in_this_run = False
 
     for article in all_articles:
-        try:
-            category = categorize_news(article.title, article.summary)
-            time.sleep(6)
+        # دسته‌بندی کاملا رایگان و محلی انجام می‌شود
+        category = categorize_news(article.title, article.summary)
+        
+        if not category:
+            continue
             
-            if not category:
-                continue
-                
-            if state["counts"][category] < DAILY_QUOTAS[category]:
+        if state["counts"][category] < DAILY_QUOTAS[category]:
+            try:
+                print(f"خبر مرتبط با {category} پیدا شد. در حال ارسال به جمینای برای ترجمه...")
                 pub_date = getattr(article, 'published', getattr(article, 'updated', 'تاریخ نامشخص'))
+                
+                # مصرف سهمیه گوگل فقط در این خط اتفاق می‌افتد
                 final_post = translate_and_format(article.title, article.summary, pub_date, article.link)
                 success = send_to_channel(final_post)
                 
@@ -226,15 +228,14 @@ def main():
                     print(f"Posted in {category}. Remaining: {DAILY_QUOTAS[category] - state['counts'][category]}")
                     break 
                     
-        except Exception as e:
-            error_msg = str(e)
-            print(f"🚨 خطای ارسال در حین پردازش: {error_msg}")
-            if "429" in error_msg or "quota" in error_msg.lower():
-                print("API Rate Limit. Waiting 20 seconds...")
-                time.sleep(20)
-                continue
-            else:
-                continue
+            except Exception as e:
+                error_msg = str(e)
+                print(f"🚨 خطای ارسال در حین ترجمه: {error_msg}")
+                if "429" in error_msg or "quota" in error_msg.lower():
+                    print("API Rate Limit. برنامه متوقف می‌شود تا در اجرای بعدی تلاش کند.")
+                    break # خروج از حلقه برای جلوگیری از مسدودی بیشتر
+                else:
+                    continue
 
     if not published_in_this_run:
         print("No matching articles for remaining quotas in this run.")
