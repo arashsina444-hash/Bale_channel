@@ -25,7 +25,7 @@ RSS_SOURCES = [
 ]
 
 # ==========================================
-# 2. Gemini Config & Smart Radar
+# 2. Gemini Config & Deep Scanner
 # ==========================================
 api_key = os.environ.get("GEMINI_API_KEY")
 
@@ -33,41 +33,47 @@ print("--------------------------------------------------")
 if not api_key:
     print("❌ خطا: کلید GEMINI_API_KEY پیدا نشد!")
 else:
-    print(f"✅ کلید جمینای پیدا شد. (۴ حرف آخر: {api_key[-4:]})")
+    print(f"✅ کلید متصل شد. (۴ حرف آخر: {api_key[-4:]})")
 print("--------------------------------------------------")
 
 client = genai.Client(api_key=api_key) if api_key else None
 MODEL_ID = None
 
 def find_working_model():
-    # لیستی از مدل‌ها از سریع‌ترین و رایگان‌ترین به سمت مدل‌های قدیمی‌تر
-    models_to_test = [
-        'gemini-1.5-flash-8b', 
-        'gemini-1.5-flash', 
-        'gemini-1.0-pro', 
-        'gemini-1.5-pro'
-    ]
-    
-    print("🔍 در حال جستجوی بهترین مدلِ فعال روی کلید شما...")
-    for m in models_to_test:
-        try:
-            client.models.generate_content(model=m, contents="hi")
-            print(f"✅ مدل [{m}] با موفقیت پاسخ داد و انتخاب شد.")
-            return m
-        except Exception as e:
-            err = str(e)
-            if "404" in err:
-                print(f"❌ مدل {m}: روی این کلید تعریف نشده (404).")
-            elif "limit: 0" in err:
-                print(f"❌ مدل {m}: سهمیه رایگان ندارد.")
-            elif "429" in err or "quota" in err.lower():
-                # ارور 429 یعنی مدل وجود دارد و کار می‌کند، فقط درگیر محدودیت سرعت شده
-                print(f"✅ مدل [{m}] فعال است (درگیر محدودیت سرعت موقت). انتخاب شد.")
-                return m
-            else:
-                print(f"❌ مدل {m}: خطای ناشناخته.")
-        time.sleep(2) # وقفه کوتاه بین تست‌ها
-    return None
+    print("🔍 در حال دریافت لیست مدل‌های مجاز مستقیما از سرور گوگل...")
+    try:
+        available_models = []
+        # دریافت تمام مدل‌هایی که این کلید به آن‌ها دسترسی دارد
+        for m in client.models.list():
+            available_models.append(m.name)
+            
+        if not available_models:
+            print("❌ کلید شما معتبر است، اما هیچ مدلی به آن اختصاص داده نشده است!")
+            print("دلیل: احتمالاً هنگام ساخت کلید، IP شما روی اروپا بوده یا API فعال نیست.")
+            return None
+            
+        print(f"✅ گوگل اجازه دسترسی به این مدل‌ها را به شما داده است ({len(available_models)} مورد):")
+        for name in available_models:
+            print(f" - {name}")
+            
+        # جستجوی مدل مناسب از بین لیست دریافتی
+        preferred = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash']
+        
+        for p in preferred:
+            for actual_name in available_models:
+                if p in actual_name:
+                    target = actual_name.replace('models/', '')
+                    print(f"🎯 مدل {target} با موفقیت انتخاب شد!")
+                    return target
+                    
+        # اگر مدل‌های معروف در لیست نبودند، اولین مدل را به اجبار انتخاب کن
+        target = available_models[0].replace('models/', '')
+        print(f"⚠️ مدل‌های استاندارد پیدا نشدند. انتخاب اجباری: {target}")
+        return target
+        
+    except Exception as e:
+        print(f"🚨 خطای دریافت لیست مدل‌ها از گوگل: {e}")
+        return None
 
 # ==========================================
 # 3. State Management
@@ -171,7 +177,7 @@ def main():
     MODEL_ID = find_working_model()
     
     if not MODEL_ID:
-        print("🚨 هیچ مدلی روی کلید شما فعال نیست! لطفا یک API Key جدید دقیقا از آدرس aistudio.google.com/app/apikey بسازید.")
+        print("🚨 برنامه متوقف شد. لطفاً با IP آمریکا یک کلید جدید بسازید.")
         return
         
     state = load_state()
