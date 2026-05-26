@@ -31,13 +31,15 @@ api_key = os.environ.get("GEMINI_API_KEY")
 
 print("--------------------------------------------------")
 if not api_key:
-    print("❌ خطا: کلید GEMINI_API_KEY در گیت‌هاب پیدا نشد! (آیا آن را در بخش Secrets ذخیره کرده‌اید؟)")
+    print("❌ خطا: کلید GEMINI_API_KEY در گیت‌هاب پیدا نشد!")
 else:
     print(f"✅ کلید جمینای پیدا شد. (۴ حرف آخر کلید شما: {api_key[-4:]})")
 print("--------------------------------------------------")
 
 client = genai.Client(api_key=api_key)
-MODEL_ID = 'gemini-2.0-flash'
+
+# استفاده از مدل 1.5 فلش که سهمیه رایگان و بالایی دارد
+MODEL_ID = 'gemini-1.5-flash'
 
 # ==========================================
 # 3. State Management
@@ -172,7 +174,7 @@ def main():
                     
         except Exception as e:
             error_msg = str(e)
-            print(f"🚨 خطای دقیق گوگل: {error_msg}") # چاپ خطای اصلی
+            print(f"🚨 خطای دقیق گوگل: {error_msg}")
             
             if "429" in error_msg or "quota" in error_msg.lower():
                 print("API Rate Limit. Waiting 20 seconds...")
