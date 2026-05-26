@@ -25,12 +25,18 @@ RSS_SOURCES = [
 ]
 
 # ==========================================
-# 2. Gemini Config (New SDK)
+# 2. Gemini Config (New SDK) & Debugger
 # ==========================================
 api_key = os.environ.get("GEMINI_API_KEY")
-client = genai.Client(api_key=api_key)
 
-# استفاده از مدل پایدار و جدید 2.0
+print("--------------------------------------------------")
+if not api_key:
+    print("❌ خطا: کلید GEMINI_API_KEY در گیت‌هاب پیدا نشد! (آیا آن را در بخش Secrets ذخیره کرده‌اید؟)")
+else:
+    print(f"✅ کلید جمینای پیدا شد. (۴ حرف آخر کلید شما: {api_key[-4:]})")
+print("--------------------------------------------------")
+
+client = genai.Client(api_key=api_key)
 MODEL_ID = 'gemini-2.0-flash'
 
 # ==========================================
@@ -146,8 +152,6 @@ def main():
     for article in all_articles:
         try:
             category = categorize_news(article.title, article.summary)
-            
-            # وقفه ۶ ثانیه‌ای
             time.sleep(6)
             
             if not category:
@@ -168,12 +172,13 @@ def main():
                     
         except Exception as e:
             error_msg = str(e)
-            if "429" in error_msg or "Quota" in error_msg:
+            print(f"🚨 خطای دقیق گوگل: {error_msg}") # چاپ خطای اصلی
+            
+            if "429" in error_msg or "quota" in error_msg.lower():
                 print("API Rate Limit. Waiting 20 seconds...")
                 time.sleep(20)
                 continue
             else:
-                print(f"Error: {error_msg}")
                 continue
 
     if not published_in_this_run:
