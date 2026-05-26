@@ -1,15 +1,14 @@
 name: News Bot Scheduler
 
 on:
-  workflow_dispatch: # اجازه می‌دهد از طریق cron-job.org یا دستی آن را اجرا کنیم
+  workflow_dispatch:
   schedule:
-    - cron: '*/30 * * * *' # اجرای داخلی گیت‌هاب (به عنوان بک‌آپ سیستم)
+    - cron: '*/30 * * * *'
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     
-    # دادن دسترسی نوشتن برای کامیت کردن فایل
     permissions:
       contents: write 
 
@@ -33,20 +32,13 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          BALE_CHAT_ID: ${{ secrets.BALE_CHAT_ID }}
         run: python bot.py
 
       - name: Commit and push state file
         run: |
-          # تنظیمات هویت ربات گیت‌هاب برای کامیت
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # اضافه کردن فایل وضعیت به استیج
           git add daily_state.json
-          
-          # کامیت کردن تغییرات (اگر فایلی تغییر نکرده باشد ارور نمی‌دهد)
-          # عبارت [skip ci] باعث می‌شود این کامیت، مجدداً یک اکشن جدید را استارت نزند
           git commit -m "🤖 Update daily state quotas [skip ci]" || echo "No changes to commit"
-          
-          # پوش کردن تغییرات به مخزن
           git push
