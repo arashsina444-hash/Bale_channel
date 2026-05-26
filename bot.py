@@ -40,39 +40,49 @@ client = genai.Client(api_key=api_key) if api_key else None
 MODEL_ID = None
 
 def find_working_model():
-    print("🔍 در حال دریافت لیست مدل‌های مجاز مستقیما از سرور گوگل...")
+    print("🔍 در حال بررسی لیست مدل‌های مجاز و تست سهمیه رایگان...")
     try:
-        available_models = []
-        # دریافت تمام مدل‌هایی که این کلید به آن‌ها دسترسی دارد
-        for m in client.models.list():
-            available_models.append(m.name)
-            
-        if not available_models:
-            print("❌ کلید شما معتبر است، اما هیچ مدلی به آن اختصاص داده نشده است!")
-            print("دلیل: احتمالاً هنگام ساخت کلید، IP شما روی اروپا بوده یا API فعال نیست.")
-            return None
-            
-        print(f"✅ گوگل اجازه دسترسی به این مدل‌ها را به شما داده است ({len(available_models)} مورد):")
-        for name in available_models:
-            print(f" - {name}")
-            
-        # جستجوی مدل مناسب از بین لیست دریافتی
-        preferred = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash']
+        available_models = [m.name.replace('models/', '') for m in client.models.list()]
         
-        for p in preferred:
-            for actual_name in available_models:
-                if p in actual_name:
-                    target = actual_name.replace('models/', '')
-                    print(f"🎯 مدل {target} با موفقیت انتخاب شد!")
-                    return target
-                    
-        # اگر مدل‌های معروف در لیست نبودند، اولین مدل را به اجبار انتخاب کن
-        target = available_models[0].replace('models/', '')
-        print(f"⚠️ مدل‌های استاندارد پیدا نشدند. انتخاب اجباری: {target}")
-        return target
+        # اولویت با مدل‌های لایت و فلش جدید که سهمیه رایگان بالایی دارند
+        preferred_order = [
+            'gemini-2.5-flash-lite',
+            'gemini-flash-lite-latest',
+            'gemini-2.5-flash',
+            'gemini-flash-latest',
+            'gemini-3.5-flash'
+        ]
+        
+        models_to_test = [p for p in preferred_order if p in available_models]
+        
+        # اضافه کردن بقیه مدل‌های فلش که شاید در لیست اولویت ما نبودند
+        for m in available_models:
+            if 'flash' in m and m not in models_to_test and 'preview' not in m:
+                models_to_test.append(m)
+                
+        for m in models_to_test:
+            print(f"⏳ در حال تست سهمیه مدل: {m} ...")
+            try:
+                # تست واقعی ارسال پیام برای اطمینان از داشتن سهمیه
+                client.models.generate_content(model=m, contents="hi")
+                print(f"🎯 مدل {m} با موفقیت تست شد و سهمیه دارد! انتخاب شد.")
+                return m
+            except Exception as e:
+                err = str(e)
+                if "limit: 0" in err:
+                    print(f"❌ مدل {m}: سهمیه رایگان صفر است.")
+                elif "429" in err or "quota" in err.lower():
+                    print(f"✅ مدل {m}: فعال است (فقط محدودیت سرعت لحظه‌ای). انتخاب شد.")
+                    return m
+                else:
+                    print(f"❌ مدل {m}: ارور ناشناخته -> {err[:50]}")
+            time.sleep(2)
+            
+        print("🚨 هیچ‌کدام از مدل‌ها سهمیه رایگان نداشتند!")
+        return None
         
     except Exception as e:
-        print(f"🚨 خطای دریافت لیست مدل‌ها از گوگل: {e}")
+        print(f"🚨 خطای دریافت لیست: {e}")
         return None
 
 # ==========================================
@@ -177,7 +187,7 @@ def main():
     MODEL_ID = find_working_model()
     
     if not MODEL_ID:
-        print("🚨 برنامه متوقف شد. لطفاً با IP آمریکا یک کلید جدید بسازید.")
+        print("🚨 برنامه متوقف شد.")
         return
         
     state = load_state()
