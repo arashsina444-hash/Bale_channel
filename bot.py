@@ -135,19 +135,16 @@ def main():
     for article in all_articles:
         try:
             category = categorize_news(article.title, article.summary)
-            time.sleep(4)
+            
+            # وقفه ۶ ثانیه‌ای برای جلوگیری از مسدود شدن توسط جمینای
+            time.sleep(6)
             
             if not category:
                 continue
                 
             if state["counts"][category] < DAILY_QUOTAS[category]:
-                # دریافت تاریخ خبر از فید
                 pub_date = getattr(article, 'published', getattr(article, 'updated', 'تاریخ نامشخص'))
-                
-                # پردازش نهایی و ترجمه
                 final_post = translate_and_format(article.title, article.summary, pub_date, article.link)
-                
-                # ارسال به بله
                 success = send_to_channel(final_post)
                 
                 if success:
@@ -161,8 +158,9 @@ def main():
         except Exception as e:
             error_msg = str(e)
             if "429" in error_msg or "Quota" in error_msg:
-                print("API Rate Limit. Waiting 10 seconds...")
-                time.sleep(10)
+                # اگر باز هم اخطار محدودیت سرعت داد، ۲۰ ثانیه کامل صبر می‌کند
+                print("API Rate Limit. Waiting 20 seconds...")
+                time.sleep(20)
                 continue
             else:
                 print(f"Error: {error_msg}")
