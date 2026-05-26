@@ -25,21 +25,49 @@ RSS_SOURCES = [
 ]
 
 # ==========================================
-# 2. Gemini Config (New SDK) & Debugger
+# 2. Gemini Config & Smart Radar
 # ==========================================
 api_key = os.environ.get("GEMINI_API_KEY")
 
 print("--------------------------------------------------")
 if not api_key:
-    print("❌ خطا: کلید GEMINI_API_KEY در گیت‌هاب پیدا نشد!")
+    print("❌ خطا: کلید GEMINI_API_KEY پیدا نشد!")
 else:
-    print(f"✅ کلید جمینای پیدا شد. (۴ حرف آخر کلید شما: {api_key[-4:]})")
+    print(f"✅ کلید جمینای پیدا شد. (۴ حرف آخر: {api_key[-4:]})")
 print("--------------------------------------------------")
 
-client = genai.Client(api_key=api_key)
+client = genai.Client(api_key=api_key) if api_key else None
+MODEL_ID = None
 
-# استفاده از مدل 1.5 فلش که سهمیه رایگان و بالایی دارد
-MODEL_ID = 'gemini-1.5-flash'
+def find_working_model():
+    # لیستی از مدل‌ها از سریع‌ترین و رایگان‌ترین به سمت مدل‌های قدیمی‌تر
+    models_to_test = [
+        'gemini-1.5-flash-8b', 
+        'gemini-1.5-flash', 
+        'gemini-1.0-pro', 
+        'gemini-1.5-pro'
+    ]
+    
+    print("🔍 در حال جستجوی بهترین مدلِ فعال روی کلید شما...")
+    for m in models_to_test:
+        try:
+            client.models.generate_content(model=m, contents="hi")
+            print(f"✅ مدل [{m}] با موفقیت پاسخ داد و انتخاب شد.")
+            return m
+        except Exception as e:
+            err = str(e)
+            if "404" in err:
+                print(f"❌ مدل {m}: روی این کلید تعریف نشده (404).")
+            elif "limit: 0" in err:
+                print(f"❌ مدل {m}: سهمیه رایگان ندارد.")
+            elif "429" in err or "quota" in err.lower():
+                # ارور 429 یعنی مدل وجود دارد و کار می‌کند، فقط درگیر محدودیت سرعت شده
+                print(f"✅ مدل [{m}] فعال است (درگیر محدودیت سرعت موقت). انتخاب شد.")
+                return m
+            else:
+                print(f"❌ مدل {m}: خطای ناشناخته.")
+        time.sleep(2) # وقفه کوتاه بین تست‌ها
+    return None
 
 # ==========================================
 # 3. State Management
@@ -111,7 +139,7 @@ def send_to_channel(text):
     chat_id = os.environ.get("BALE_CHAT_ID")
     
     if not bot_token or not chat_id:
-        print("Error: BOT_TOKEN or BALE_CHAT_ID is missing in GitHub Secrets.")
+        print("Error: BOT_TOKEN or BALE_CHAT_ID is missing.")
         return False
 
     url = f"https://tapi.bale.ai/bot{bot_token}/sendMessage"
@@ -136,6 +164,16 @@ def send_to_channel(text):
 # 6. Main Logic
 # ==========================================
 def main():
+    if not client:
+        return
+        
+    global MODEL_ID
+    MODEL_ID = find_working_model()
+    
+    if not MODEL_ID:
+        print("🚨 هیچ مدلی روی کلید شما فعال نیست! لطفا یک API Key جدید دقیقا از آدرس aistudio.google.com/app/apikey بسازید.")
+        return
+        
     state = load_state()
     
     all_articles = []
@@ -174,8 +212,7 @@ def main():
                     
         except Exception as e:
             error_msg = str(e)
-            print(f"🚨 خطای دقیق گوگل: {error_msg}")
-            
+            print(f"🚨 خطای ارسال در حین پردازش: {error_msg}")
             if "429" in error_msg or "quota" in error_msg.lower():
                 print("API Rate Limit. Waiting 20 seconds...")
                 time.sleep(20)
